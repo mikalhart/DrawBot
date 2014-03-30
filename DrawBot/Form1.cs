@@ -18,27 +18,33 @@ namespace DrawBot
 {
    public partial class Form1 : Form
    {
+      // Various constants
       const UInt32 blobsPerSecond = 50;
       const UInt32 blobLengthMillis = 1000 / blobsPerSecond;
       const UInt32 samplesPerSecond = 192000;
       const UInt32 numChannels = 2;
       const UInt32 bitsPerSample = 8;
-      const double baselineAngleAdjustment = Math.PI / 4 - 0.0855211333; // +0.0907571211 RS -0.0855211333 P
-      const double armAngleAdjustment = 0.0244346095; // +0.0314159265 RS +0.0244346095 P
-      const float margin = 0.20F; // 15% margin
+      const float margin = 0.20F; // 20% margin
+
+      // How long the arm should "linger" at each point
       const int firstPointTimeMs = 10000;
-      const int anchorPointTimeMs = 50;
-      const int intermediatePointTimeMs = 100; // 100;
+      const int anchorPointTimeMs = 100;
+      const int intermediatePointTimeMs = 100;
+      const int lastPointTimeMs = 10000;
+
+      // Adjustments
+      double baselineAngleAdjustment = 0.0; // Math.PI / 4 - 0.0855211333; // +0.0907571211 RS -0.0855211333 P
+      double armAngleAdjustment = 0.0; // 0.0244346095; // +0.0314159265 RS +0.0244346095 P
 
       private class angleTimeTriplet
       {
          public float arm1angle, arm2angle;
-         public int milliseconds;
+         public int linger;
       }
 
-      private class blob
+      private class WAVblob
       {
-         public UInt32[] pulseLengthMicros = new UInt32[2]; // left and right pulse length in microseconds
+         public UInt32 left, right; // left and right pulse length in microseconds
       }
 
       private float radiansToDegrees(float r)
@@ -47,11 +53,12 @@ namespace DrawBot
       }
 
       // Calculate the angle of arm 1 relative to its baseline and arm 2 relative to arm 1
-      enum Encodings {OK, OUT_OF_RANGE, TOO_FAR};
+      enum EncodingEnum {OK, OUT_OF_RANGE, TOO_FAR};
       private List<PointF> badTooFar = new List<PointF>();
       private List<PointF> badUnreachable = new List<PointF>();
 
-      private Encodings encodePoint(PointF pt, PointF hubLocation, float arm1Length, float arm2length, out angleTimeTriplet triple)
+      // Convert a point into an angle-angle-lingertime triple, given hublocation and arm lengths
+      private EncodingEnum encodePoint(PointF pt, PointF hubLocation, float arm1Length, float arm2length, out angleTimeTriplet triple)
       {
          triple = new angleTimeTriplet();
 
@@ -69,7 +76,7 @@ namespace DrawBot
          {
             Console.WriteLine("Point too far: " + pt.X + "," + pt.Y);
             badTooFar.Add(pt);
-            return Encodings.TOO_FAR;
+            return EncodingEnum.TOO_FAR;
          }
 
          // Then determine the angle between the baseline and the vector
@@ -83,30 +90,32 @@ namespace DrawBot
          triple.arm1angle = (float)(angleBaselineVector - angleArm1ToVector); 
          triple.arm2angle = (float)Math.Acos((arm1Length * arm1Length + arm2length * arm2length - vectorLength * vectorLength) / (2 * arm2length * arm1Length));
          triple.arm2angle += (float)armAngleAdjustment;
-         triple.milliseconds = intermediatePointTimeMs;
+         triple.linger = intermediatePointTimeMs;
 
+         // If the resulting angle would require the servo to move less than 0 degrees or more than 180, well, then that's unreachable too.
          if (triple.arm1angle < 0.0F || triple.arm1angle > Math.PI ||
              triple.arm2angle < 0.0F || triple.arm2angle > Math.PI)
          {
             Console.WriteLine("Angle out of range: arm1=" + radiansToDegrees((float)triple.arm1angle) + " arm2=" + radiansToDegrees((float)triple.arm2angle));
             badUnreachable.Add(pt);
-            return Encodings.OUT_OF_RANGE;
+            return EncodingEnum.OUT_OF_RANGE;
          }
 
 #if false
          Console.WriteLine("Pt=" + pt.X + "," + pt.Y + " DX=" + (float)dx + " DY=" + (float)dy + " VectLen=" + (float)vectorLength + " Arm1-to-vect=" + radiansToDegrees((float)angleArm1ToVector) +
             " Base-to-Vect=" + radiansToDegrees((float)angleBaselineVector) + " arm1=" + radiansToDegrees((float)triple.arm1angle) + " arm2=" + radiansToDegrees((float)triple.arm2angle));
 #endif
-         return Encodings.OK;
+         return EncodingEnum.OK;
       }
 
-      private void encodeLine(PointF pt1, PointF pt2, PointF hubLocation, float arm1Length, float arm2Length, ref List<angleTimeTriplet> angles)
+      // Convert a line into a series of angle-angle-lingertime triples, interpolating new points if necessary
+      private void encodeLine(PointF pt1, PointF pt2, PointF hubLocation, float arm1Length, float arm2Length, ref List<angleTimeTriplet> triples)
       {
          // Calculate the two endpoints
          angleTimeTriplet tripleStart;
          angleTimeTriplet tripleEnd;
-         if (encodePoint(pt1, hubLocation, arm1Length, arm2Length, out tripleStart) == Encodings.TOO_FAR ||
-            encodePoint(pt2, hubLocation, arm1Length, arm2Length, out tripleEnd) == Encodings.TOO_FAR)
+         if (encodePoint(pt1, hubLocation, arm1Length, arm2Length, out tripleStart) == EncodingEnum.TOO_FAR ||
+            encodePoint(pt2, hubLocation, arm1Length, arm2Length, out tripleEnd) == EncodingEnum.TOO_FAR)
          {
             Console.WriteLine("Cannot encode line.");
             return;
@@ -121,14 +130,16 @@ namespace DrawBot
          {
             PointF ptInterpol = new PointF(pt1.X + i * (pt2.X - pt1.X) / steps, pt1.Y + i * (pt2.Y - pt1.Y) / steps);
             angleTimeTriplet newTriple;
-            if (Encodings.OK == encodePoint(ptInterpol, hubLocation, arm1Length, arm2Length, out newTriple))
+            if (EncodingEnum.OK == encodePoint(ptInterpol, hubLocation, arm1Length, arm2Length, out newTriple))
             {
-               newTriple.milliseconds = i == steps ? anchorPointTimeMs : intermediatePointTimeMs;
-               angles.Add(newTriple);
+               newTriple.linger = i == steps ? anchorPointTimeMs : intermediatePointTimeMs;
+               triples.Add(newTriple);
             }
          }
       }
 
+      // Load an SVG and create a series of points.  (Note: requires special limited SVG)
+      // ...and discover the dimension rectangle for the image
       private static bool loadSVG(string svgFile, out RectangleF imageDimensions, out List<PointF> points, ref string errorMessage)
       {
          XDocument xml;
@@ -177,7 +188,7 @@ namespace DrawBot
             return false;
          }
 
-#if true // This code calculates the bounding rectangle of the actual image
+         // This code calculates the bounding rectangle of the actual image
          float bottom = float.MaxValue, left = float.MaxValue, rwidth = 0F, rheight = 0F;
          foreach (PointF pt in points)
          {
@@ -192,10 +203,10 @@ namespace DrawBot
 
          // Shrink it a bit so that it has a bit of margin
          imageDimensions = new RectangleF(left - margin * rwidth, bottom - margin * rheight, (1.0F + 2 * margin) * rwidth, (1.0F + 2 * margin) * rheight);
-#endif
          return true;
       }
 
+      // Scale the image to the page
       private void scalePoints(RectangleF imageSize, RectangleF pageSize, List<PointF> rawPoints, out List<PointF> scaledPoints)
       {
          scaledPoints = new List<PointF>();
@@ -206,12 +217,15 @@ namespace DrawBot
          {
             float x = (rawPt.X - imageCenter.X) * scaleFactor + pageCenter.X;
             float y = (rawPt.Y - imageCenter.Y) * scaleFactor + pageCenter.Y;
+            // Per Sean 3/24: rotate and mirror image left/right
+            y = pageSize.Height - y;
             PointF scaledPt = new PointF(x, y);
             scaledPoints.Add(scaledPt);
          }
       }
 
-      void pointsToAngles(List<PointF> scaledPoints, float arm1Length, float arm2Length, PointF hubLocation, out List<angleTimeTriplet> triples)
+      // Convert a list of x/y points to a list of angle-angle-lingertime triples
+      void pointsToTriples(List<PointF> scaledPoints, float arm1Length, float arm2Length, PointF hubLocation, out List<angleTimeTriplet> triples)
       {
          triples = new List<angleTimeTriplet>();
 
@@ -224,10 +238,10 @@ namespace DrawBot
 #else
          // Add the first point to the list
          angleTimeTriplet triple;
-         if (encodePoint(scaledPoints[0], hubLocation, arm1Length, arm2Length, out triple) == Encodings.OK)
+         if (encodePoint(scaledPoints[0], hubLocation, arm1Length, arm2Length, out triple) == EncodingEnum.OK)
          {
             // The very first position the arms go to will allow a 10-second pause for inserting the pen
-            triple.milliseconds = firstPointTimeMs;
+            triple.linger = firstPointTimeMs;
             triples.Add(triple);
          }
 
@@ -235,24 +249,31 @@ namespace DrawBot
          for (int i = 0; i < scaledPoints.Count - 1; ++i)
             encodeLine(scaledPoints[i], scaledPoints[i + 1], hubLocation, arm1Length, arm2Length, ref triples);
 #endif
+
+         // The last point should remain a long time also--to allow pen removal
+         angleTimeTriplet last = triples.Last();
+         last.linger = lastPointTimeMs;
+         triples.Add(last);
       }
 
-      private void anglesToBlobs(List<angleTimeTriplet> triples, int angle0Microseconds, int angle180Microseconds, out List<blob> blobList)
+      // Convert list of angle-angle-lingertime triples to series of WAV file blobs
+      private void triplesToBlobs(List<angleTimeTriplet> triples, int angle0Microseconds, int angle180Microseconds, out List<WAVblob> blobList)
       {
-         blobList = new List<blob>();
+         blobList = new List<WAVblob>();
          foreach (angleTimeTriplet t in triples)
          {
-            for (int i = t.milliseconds; i > 0; i -= (int)blobLengthMillis)
+            for (int i = t.linger; i > 0; i -= (int)blobLengthMillis)
             {
-               blob b = new blob();
-               b.pulseLengthMicros[0] = (UInt32)(angle0Microseconds + (t.arm1angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
-               b.pulseLengthMicros[1] = (UInt32)(angle0Microseconds + (t.arm2angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
+               WAVblob b = new WAVblob();
+               b.left = (UInt32)(angle0Microseconds + (t.arm1angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
+               b.right = (UInt32)(angle0Microseconds + (t.arm2angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
                blobList.Add(b);
             }
          }
       }
 
-      private bool blobsToWave(List<blob> blobList, string waveFileName, bool invertedWave, ref string errMessage)
+      // Convert a list of WAV file blobs to a WAV file.
+      private bool blobsToWaveFile(List<WAVblob> blobList, string waveFileName, bool invertedWave, ref string errMessage)
       {
          UInt32 byteRate = samplesPerSecond * numChannels * bitsPerSample / 8;
          UInt32 blockAlign = numChannels * bitsPerSample / 8;
@@ -285,10 +306,10 @@ namespace DrawBot
 
          // And finally... the data
          // in the form CH0SAM0, CH1SAM0, CH0SAM1, CH1SAM1, etc.
-         foreach (blob b in blobList)
+         foreach (WAVblob b in blobList)
          {
-            UInt32 highLeftSamples = b.pulseLengthMicros[0] * samplesPerMillisecond / 1000;
-            UInt32 highRightSamples = b.pulseLengthMicros[1] * samplesPerMillisecond / 1000;
+            UInt32 highLeftSamples = b.left * samplesPerMillisecond / 1000;
+            UInt32 highRightSamples = b.right * samplesPerMillisecond / 1000;
             for (UInt32 i = 0; i < samplesPerBlob; ++i)
             {
                byte hi = invertedWave ? byte.MinValue : byte.MaxValue;
@@ -303,6 +324,7 @@ namespace DrawBot
          return true;
       }
 
+      // Root level function: convert a specialize SVG file into a WAV file for a Sean Ragan DrawBot
       private bool SVGtoWAV(string inputSVG, RectangleF pageSize, PointF hubLocation, float arm1Length, float arm2Length, int angle0Microseconds, int angle180Microseconds, string waveFileName, bool invertedWave, ref string err, ref string diags)
       {
          // Calculated and loaded from image
@@ -310,14 +332,14 @@ namespace DrawBot
          List<PointF> rawPoints;
          List<PointF> scaledPoints;
          List<angleTimeTriplet> triples;
-         List<blob> blobs;
+         List<WAVblob> blobs;
 
          if (!loadSVG(inputSVG, out imageSize, out rawPoints, ref err))
             return false;
          scalePoints(imageSize, pageSize, rawPoints, out scaledPoints);
-         pointsToAngles(scaledPoints, arm1Length, arm2Length, hubLocation, out triples);
-         anglesToBlobs(triples, angle0Microseconds, angle180Microseconds, out blobs);
-         if (!blobsToWave(blobs, waveFileName, invertedWave, ref err))
+         pointsToTriples(scaledPoints, arm1Length, arm2Length, hubLocation, out triples);
+         triplesToBlobs(triples, angle0Microseconds, angle180Microseconds, out blobs);
+         if (!blobsToWaveFile(blobs, waveFileName, invertedWave, ref err))
             return false;
 
          diags += "The provided image has aspect " + imageSize.Width + " by " + imageSize.Height + Environment.NewLine;
@@ -351,7 +373,7 @@ namespace DrawBot
          for (int i = 0; i < triples.Count; ++i)
          {
             diags += i + ".  " + radiansToDegrees(triples[i].arm1angle).ToString("F4") + ", " +
-               radiansToDegrees(triples[i].arm2angle).ToString("F4") + ", " + triples[i].milliseconds + "ms" + Environment.NewLine;
+               radiansToDegrees(triples[i].arm2angle).ToString("F4") + ", " + triples[i].linger + "ms" + Environment.NewLine;
             ListViewItem item = lvAngles.Items.Add(i.ToString());
             item.SubItems.Add(radiansToDegrees(triples[i].arm1angle).ToString("F4"));
             item.SubItems.Add(radiansToDegrees(triples[i].arm2angle).ToString("F4"));
@@ -360,10 +382,10 @@ namespace DrawBot
          diags += "There are " + blobs.Count + " blobs:" + Environment.NewLine;
          for (int i=0; i<blobs.Count; ++i)
          {
-            diags += "   " + blobs[i].pulseLengthMicros[0] + ", " + blobs[i].pulseLengthMicros[1] + Environment.NewLine;
+            diags += "   " + blobs[i].left + ", " + blobs[i].right + Environment.NewLine;
             ListViewItem item = lvBlobs.Items.Add(i.ToString());
-            item.SubItems.Add(blobs[i].pulseLengthMicros[0].ToString());
-            item.SubItems.Add(blobs[i].pulseLengthMicros[1].ToString());
+            item.SubItems.Add(blobs[i].left.ToString());
+            item.SubItems.Add(blobs[i].right.ToString());
          }         
          diags += "And the audio file should last about " + blobs.Count / blobsPerSecond + " seconds." + Environment.NewLine;
 
@@ -401,23 +423,6 @@ namespace DrawBot
       public Form1()
       {
          InitializeComponent();
-
-#if false
-         // Inputs
-         string inputSVG = @"C:\Users\mnhart\Google Drive\Projects\DrawBot\svg\01 - circle.svg";
-         RectangleF pageSize = new RectangleF(0F, 0F, 11F, 8.5F);
-         PointF hubLocation = new PointF(5.5F, -2F);
-         float arm1Length = 6.2F;
-         float arm2Length = 6.5F;
-         int angle0Microseconds = 600;
-         int angle180Microseconds = 2400;
-         string waveFileName = "Happiness.sundial.wav";
-         bool invertedWave = false;
-         string err = "";
-
-         if (!SVGtoWAV(inputSVG, pageSize, hubLocation, arm1Length, arm2Length, angle0Microseconds, angle180Microseconds, waveFileName, invertedWave, ref err))
-            MessageBox.Show("Error: " + err);
-#endif
       }
 
       private void Form1_Load(object sender, EventArgs e)
@@ -431,189 +436,6 @@ namespace DrawBot
       private void Form1_MouseDown(object sender, MouseEventArgs e)
       {
          X = e.X; Y = e.Y;
-      }
-
-#if false
-      // Convert a point into a pair of angles plus minimum time to linger there
-      angleTimeTriplet pointToAngles(PointF p, PointF hub, int armLength)
-      {
-         angleTimeTriplet triple = new angleTimeTriplet();
-
-         double dx = p.X - hub.X;
-         double dy = p.Y - hub.Y;
-         double vector = Math.Sqrt(dx * dx + dy * dy);
-         double theta = dx == 0 ? Math.PI / 2 : Math.Atan(dy / (double)dx);
-         if (theta < 0)
-            theta += Math.PI;
-         double theta1 = Math.Acos(vector / (2 * armLength));
-         triple.arm1angle = theta + theta1;
-         triple.arm2angle = 2 * theta1;
-         triple.milliseconds = 20;
-
-         return triple;
-      }
-
-      // Take a line defined by two endpoints and transform it into a series of angle+time triples
-      // such that no consecutive points differ by more than 1 degree
-      void EncodeLine(PointF pt1, PointF pt2, ref List<angleTimeTriplet> triples, PointF hub, int armLength)
-      {
-         angleTimeTriplet trip1 = pointToAngles(pt1, hub, armLength);
-         angleTimeTriplet trip2 = pointToAngles(pt2, hub, armLength);
-
-         if (Math.Abs(trip1.arm1angle - trip2.arm1angle) > Math.PI / 180.0 || Math.Abs(trip1.arm2angle - trip2.arm2angle) > Math.PI / 180.0) // 1 degree max
-         {
-            PointF mid = new PointF((pt2.X + pt1.X) / 2, (pt2.Y + pt1.Y) / 2);
-            EncodeLine(pt1, mid, ref triples, hub, armLength);
-            EncodeLine(mid, pt2, ref triples, hub, armLength);
-         }
-         else
-         {
-            triples.Add(trip2);
-         }
-      }
-#endif
-
-
-      private void Form1_MouseUp(object sender, MouseEventArgs e)
-      {
-#if false
-         // We assume the page's lower left corner is (0, 0)
-         // The size of the page is given just as a sanity check 
-         // to make sure no line goes outside that boundary
-         RectangleF pageSize = new RectangleF(0.0F, 0.0F, 8.5F, 11F);
-         PointF hubLocation = new PointF(pageSize.Width / 2, -200);
-         int armLength = 700;
-         int angle0Microseconds = 750;
-         int angle180Microseconds = 2250;
-         int msPerDegreeSpeed = 3;
-         bool inverted = false;
-
-         // Step 0: Given the constraints, create an initial list of points
-         List<Point> inputPoints = new List<Point>();
-#if false // 5 points on side
-         for (int i=1; i<5; ++i)
-            inputPoints.Add(new Point(700, 100*i));
-#elif true // circle
-         int radius = 100;
-         for (double t=0; t<2*Math.PI; t += 0.01)
-            inputPoints.Add(new Point((int)(pageSize.Width / 2 + 200 + radius * Math.Cos(t)), (int)(pageSize.Height / 2 + radius * Math.Sin(t))));
-#else // big diagonal
-         inputPoints.Add(new Point(pageSize.Width - 1, 0));
-         inputPoints.Add(new Point(0, pageSize.Height - 1));
-#endif
-         Console.WriteLine("There are " + inputPoints.Count + " points in the list.");
-
-         // Step 1: Given a list of points, create a list of angle-time triplets
-         List<angleTimeTriplet> triples = new List<angleTimeTriplet>();
-         
-         // First of all, an initial point that lasts 10 seconds
-         angleTimeTriplet triple = pointToAngles(inputPoints[0], hubLocation, armLength);
-         triple.milliseconds = 10000;
-         triples.Add(triple);
-
-         // Draw the point list and calculate triples, extrapolating if necessary
-         Graphics g = this.CreateGraphics();
-         Pen red = new Pen(Color.FromArgb(255, 255, 0, 0));
-         Pen black = new Pen(Color.FromArgb(255, 0, 0, 0));
-         for (int i = 0; i < inputPoints.Count - 1; ++i)
-         {
-            EncodeLine(inputPoints[i], inputPoints[i + 1], ref triples, hubLocation, armLength);
-            g.DrawLine(red, inputPoints[i].X, pageSize.Height - inputPoints[i].Y, inputPoints[i + 1].X, pageSize.Height - inputPoints[i + 1].Y);
-         }
-
-         // Lastly, make the last point last 10 seconds also
-         triple = pointToAngles(inputPoints.Last(), hubLocation, armLength);
-         triple.milliseconds = 10000;
-         triples.Add(triple);
-
-         Console.WriteLine("There are " + triples.Count + " triples in the list.");
-
-         // Step 2: Draw all the angle-time triplets with proper timing
-         foreach (angleTimeTriplet t in triples)
-         {
-            // Draw a line at length L and angle AP from 0,0
-            double arm1endX = armLength * Math.Cos(t.arm1angle) + hubLocation.X;
-            double arm1endY = armLength * Math.Sin(t.arm1angle) + hubLocation.Y;
-            g.DrawLine(black, hubLocation.X, pageSize.Height - hubLocation.Y, (int)arm1endX, pageSize.Height - (int)arm1endY);
-
-            // Draw a line at length L and angle -A from newx, newy
-            double arm2endX = arm1endX + armLength * Math.Cos(t.arm1angle - t.arm2angle);
-            double arm2endY = arm1endY + armLength * Math.Sin(t.arm1angle - t.arm2angle);
-            g.DrawLine(black, (int)arm1endX, pageSize.Height - (int)arm1endY, (int)arm2endX, pageSize.Height - (int)arm2endY);
-
-            System.Threading.Thread.Sleep(t.milliseconds);
-         }
-
-         // Step 3: Given a list of angle-time triplets, create a list of 192Khz "blobs".
-         // A "blob" is a 50ms chunk of data
-         List<blob> bloblist = new List<blob>();
-         UInt32 samplesPerSecond = 192000;
-         UInt32 blobsPerSecond = 50;
-         UInt32 blobLengthMs = 1000 / blobsPerSecond;
-         foreach (angleTimeTriplet t in triples)
-         {
-            for (int i = t.milliseconds; i > 0; i -= (int)blobLengthMs)
-            {
-               blob b = new blob();
-               b.pulseLengthMicros[0] = (UInt32)(angle0Microseconds + (t.arm1angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
-               b.pulseLengthMicros[1] = (UInt32)(angle0Microseconds + (t.arm2angle / Math.PI) * (angle180Microseconds - angle0Microseconds));
-               Console.WriteLine(b.pulseLengthMicros[0] + " " + b.pulseLengthMicros[1]);
-               bloblist.Add(b);
-            }
-         }
-         Console.WriteLine("There are " + bloblist.Count + " blobs in the list.");
-         Console.WriteLine("And the audio file should last " + bloblist.Count / blobsPerSecond + " seconds.");
-
-         // Step 4: translate the blob list into a 192KHz .WAV file
-         FileStream fs = new FileStream("circle.wav", FileMode.Create);
-         UInt32 numChannels = 2;
-         UInt32 bitsPerSample = 8;
-         UInt32 byteRate = samplesPerSecond * numChannels * bitsPerSample / 8;
-         UInt32 blockAlign = numChannels * bitsPerSample / 8;
-         UInt32 samplesPerMillisecond = samplesPerSecond / 1000;
-         UInt32 dataChunkSize = (UInt32)bloblist.Count * blobLengthMs * samplesPerMillisecond * numChannels * bitsPerSample / 8;
-         UInt32 samplesPerBlob = samplesPerSecond / blobsPerSecond;
-
-         // Create the writer for data.
-         BinaryWriter w = new BinaryWriter(fs);
-
-         // Write RIFF header
-         w.Write('R'); w.Write('I'); w.Write('F'); w.Write('F');
-         w.Write((UInt32)(36 + dataChunkSize));
-         w.Write('W'); w.Write('A'); w.Write('V'); w.Write('E');
-
-         // And the WAVE header
-         w.Write('f'); w.Write('m'); w.Write('t'); w.Write(' ');
-         w.Write((UInt32)16); // WAVE header size (remaining)
-         w.Write((UInt16)1);  // PCM = 1
-         w.Write((UInt16)numChannels);
-         w.Write((UInt32)samplesPerSecond);
-         w.Write((UInt32)byteRate);
-         w.Write((UInt16)blockAlign);
-         w.Write((UInt16)bitsPerSample);
-
-         // The Data header
-         w.Write('d'); w.Write('a'); w.Write('t'); w.Write('a');
-         w.Write((UInt32)dataChunkSize);
-
-         // And finally... the data
-         // in the form CH0SAM0, CH1SAM0, CH0SAM1, CH1SAM1, etc.
-         foreach(blob b in bloblist)
-         {
-            UInt32 highLeftSamples = b.pulseLengthMicros[0] * samplesPerMillisecond / 1000;
-            UInt32 highRightSamples = b.pulseLengthMicros[1] * samplesPerMillisecond / 1000;
-            for (UInt32 i=0; i<samplesPerBlob; ++i)
-            {
-               byte hi = inverted ? byte.MinValue : byte.MaxValue;
-               byte lo = inverted ? byte.MaxValue : byte.MinValue;
-               w.Write(i < highLeftSamples ? hi : lo);
-               w.Write(i < highRightSamples ? hi : lo);
-            }
-         }
-
-         w.Close();
-         fs.Close();
-#endif
       }
 
       private void btnBrowseSVG_Click(object sender, EventArgs e)
@@ -642,6 +464,8 @@ namespace DrawBot
          {
             string err = "";
             string diags = "";
+            baselineAngleAdjustment = Math.PI / 4 + float.Parse(this.tbBaselineAdj.Text);
+            armAngleAdjustment = float.Parse(this.tbArmAdj.Text);
             if (!SVGtoWAV(tbsvgFile.Text,
                new RectangleF(0, 0, float.Parse(tbPageWidth.Text), float.Parse(tbPageHeight.Text)),
                new PointF(float.Parse(tbHubX.Text), float.Parse(tbHubY.Text)),
@@ -680,11 +504,6 @@ namespace DrawBot
             else
                tbWavFile.Text = tbsvgFile.Text;
          }
-      }
-
-      private void tbms0_TextChanged(object sender, EventArgs e)
-      {
-
       }
    }
 }

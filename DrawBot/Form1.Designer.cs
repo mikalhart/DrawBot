@@ -85,6 +85,10 @@
          this.columnHeader16 = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
          this.columnHeader17 = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
          this.columnHeader18 = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+         this.label13 = new System.Windows.Forms.Label();
+         this.label14 = new System.Windows.Forms.Label();
+         this.tbBaselineAdj = new System.Windows.Forms.TextBox();
+         this.tbArmAdj = new System.Windows.Forms.TextBox();
          this.SuspendLayout();
          // 
          // label1
@@ -129,7 +133,7 @@
          this.tbPageWidth.Name = "tbPageWidth";
          this.tbPageWidth.Size = new System.Drawing.Size(41, 20);
          this.tbPageWidth.TabIndex = 4;
-         this.tbPageWidth.Text = "8.5";
+         this.tbPageWidth.Text = "5";
          // 
          // label3
          // 
@@ -155,12 +159,12 @@
          this.tbPageHeight.Name = "tbPageHeight";
          this.tbPageHeight.Size = new System.Drawing.Size(41, 20);
          this.tbPageHeight.TabIndex = 6;
-         this.tbPageHeight.Text = "11";
+         this.tbPageHeight.Text = "7";
          // 
          // label5
          // 
          this.label5.AutoSize = true;
-         this.label5.Location = new System.Drawing.Point(221, 113);
+         this.label5.Location = new System.Drawing.Point(229, 113);
          this.label5.Name = "label5";
          this.label5.Size = new System.Drawing.Size(14, 13);
          this.label5.TabIndex = 12;
@@ -170,9 +174,9 @@
          // 
          this.tbHubY.Location = new System.Drawing.Point(174, 106);
          this.tbHubY.Name = "tbHubY";
-         this.tbHubY.Size = new System.Drawing.Size(41, 20);
+         this.tbHubY.Size = new System.Drawing.Size(49, 20);
          this.tbHubY.TabIndex = 11;
-         this.tbHubY.Text = "-1.04";
+         this.tbHubY.Text = "-0.8125";
          // 
          // label6
          // 
@@ -189,7 +193,7 @@
          this.tbHubX.Name = "tbHubX";
          this.tbHubX.Size = new System.Drawing.Size(41, 20);
          this.tbHubX.TabIndex = 9;
-         this.tbHubX.Text = "1.5";
+         this.tbHubX.Text = "0.4375";
          // 
          // label7
          // 
@@ -206,7 +210,7 @@
          this.tbArm2Length.Name = "tbArm2Length";
          this.tbArm2Length.Size = new System.Drawing.Size(41, 20);
          this.tbArm2Length.TabIndex = 16;
-         this.tbArm2Length.Text = "6";
+         this.tbArm2Length.Text = "4";
          // 
          // label9
          // 
@@ -223,7 +227,7 @@
          this.tbArm1Length.Name = "tbArm1Length";
          this.tbArm1Length.Size = new System.Drawing.Size(41, 20);
          this.tbArm1Length.TabIndex = 14;
-         this.tbArm1Length.Text = "5.37";
+         this.tbArm1Length.Text = "4";
          // 
          // label10
          // 
@@ -270,7 +274,7 @@
          // 
          // btnBrowseWav
          // 
-         this.btnBrowseWav.Location = new System.Drawing.Point(321, 240);
+         this.btnBrowseWav.Location = new System.Drawing.Point(321, 277);
          this.btnBrowseWav.Name = "btnBrowseWav";
          this.btnBrowseWav.Size = new System.Drawing.Size(75, 23);
          this.btnBrowseWav.TabIndex = 23;
@@ -280,7 +284,7 @@
          // 
          // tbWavFile
          // 
-         this.tbWavFile.Location = new System.Drawing.Point(87, 213);
+         this.tbWavFile.Location = new System.Drawing.Point(87, 250);
          this.tbWavFile.Name = "tbWavFile";
          this.tbWavFile.Size = new System.Drawing.Size(309, 20);
          this.tbWavFile.TabIndex = 22;
@@ -288,7 +292,7 @@
          // label12
          // 
          this.label12.AutoSize = true;
-         this.label12.Location = new System.Drawing.Point(18, 213);
+         this.label12.Location = new System.Drawing.Point(18, 250);
          this.label12.Name = "label12";
          this.label12.Size = new System.Drawing.Size(67, 13);
          this.label12.TabIndex = 21;
@@ -297,7 +301,7 @@
          // cbInvertWave
          // 
          this.cbInvertWave.AutoSize = true;
-         this.cbInvertWave.Location = new System.Drawing.Point(27, 260);
+         this.cbInvertWave.Location = new System.Drawing.Point(27, 297);
          this.cbInvertWave.Name = "cbInvertWave";
          this.cbInvertWave.Size = new System.Drawing.Size(85, 17);
          this.cbInvertWave.TabIndex = 24;
@@ -306,7 +310,7 @@
          // 
          // btnGo
          // 
-         this.btnGo.Location = new System.Drawing.Point(123, 256);
+         this.btnGo.Location = new System.Drawing.Point(123, 293);
          this.btnGo.Name = "btnGo";
          this.btnGo.Size = new System.Drawing.Size(75, 23);
          this.btnGo.TabIndex = 25;
@@ -316,7 +320,7 @@
          // 
          // tbSpew
          // 
-         this.tbSpew.Location = new System.Drawing.Point(12, 298);
+         this.tbSpew.Location = new System.Drawing.Point(12, 335);
          this.tbSpew.Multiline = true;
          this.tbSpew.Name = "tbSpew";
          this.tbSpew.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
@@ -545,11 +549,49 @@
          this.columnHeader18.Text = "Y";
          this.columnHeader18.Width = 68;
          // 
+         // label13
+         // 
+         this.label13.AutoSize = true;
+         this.label13.Location = new System.Drawing.Point(32, 212);
+         this.label13.Name = "label13";
+         this.label13.Size = new System.Drawing.Size(65, 13);
+         this.label13.TabIndex = 39;
+         this.label13.Text = "Baseline Adj";
+         // 
+         // label14
+         // 
+         this.label14.AutoSize = true;
+         this.label14.Location = new System.Drawing.Point(200, 212);
+         this.label14.Name = "label14";
+         this.label14.Size = new System.Drawing.Size(43, 13);
+         this.label14.TabIndex = 40;
+         this.label14.Text = "Arm Adj";
+         // 
+         // tbBaselineAdj
+         // 
+         this.tbBaselineAdj.Location = new System.Drawing.Point(104, 212);
+         this.tbBaselineAdj.Name = "tbBaselineAdj";
+         this.tbBaselineAdj.Size = new System.Drawing.Size(90, 20);
+         this.tbBaselineAdj.TabIndex = 41;
+         this.tbBaselineAdj.Text = "0";
+         // 
+         // tbArmAdj
+         // 
+         this.tbArmAdj.Location = new System.Drawing.Point(249, 212);
+         this.tbArmAdj.Name = "tbArmAdj";
+         this.tbArmAdj.Size = new System.Drawing.Size(90, 20);
+         this.tbArmAdj.TabIndex = 42;
+         this.tbArmAdj.Text = "0";
+         // 
          // Form1
          // 
          this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
          this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-         this.ClientSize = new System.Drawing.Size(1083, 462);
+         this.ClientSize = new System.Drawing.Size(1083, 501);
+         this.Controls.Add(this.tbArmAdj);
+         this.Controls.Add(this.tbBaselineAdj);
+         this.Controls.Add(this.label14);
+         this.Controls.Add(this.label13);
          this.Controls.Add(this.labUnreachable);
          this.Controls.Add(this.lvUnreachable);
          this.Controls.Add(this.labTooFar);
@@ -593,7 +635,6 @@
          this.Text = "DrawBot WAVE synthesizer";
          this.Load += new System.EventHandler(this.Form1_Load);
          this.MouseDown += new System.Windows.Forms.MouseEventHandler(this.Form1_MouseDown);
-         this.MouseUp += new System.Windows.Forms.MouseEventHandler(this.Form1_MouseUp);
          this.ResumeLayout(false);
          this.PerformLayout();
 
@@ -658,6 +699,10 @@
       private System.Windows.Forms.ColumnHeader columnHeader16;
       private System.Windows.Forms.ColumnHeader columnHeader17;
       private System.Windows.Forms.ColumnHeader columnHeader18;
+      private System.Windows.Forms.Label label13;
+      private System.Windows.Forms.Label label14;
+      private System.Windows.Forms.TextBox tbBaselineAdj;
+      private System.Windows.Forms.TextBox tbArmAdj;
    }
 }
 
